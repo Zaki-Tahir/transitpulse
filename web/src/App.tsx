@@ -58,14 +58,14 @@ export function App() {
     if ("Notification" in window && Notification.permission === "default") void Notification.requestPermission();
   };
 
-  const search = (name: string) => {
-    setQuery(name);
-    const match = stations.find((s) => s.name.toLowerCase() === name.toLowerCase());
+  // Runs again when the station list arrives, so typing before it has loaded still works.
+  useEffect(() => {
+    const match = stations.find((s) => s.name.toLowerCase() === query.trim().toLowerCase());
     if (match) {
       setSelected(placeFor(match, stations));
       setQuery("");
     }
-  };
+  }, [query, stations]);
 
   return (
     <div className="relative h-screen w-screen overflow-hidden">
@@ -96,7 +96,7 @@ export function App() {
           <input
             list="station-names"
             value={query}
-            onChange={(e) => search(e.target.value)}
+            onChange={(e) => setQuery(e.target.value)}
             placeholder="Find a station"
             className="w-full rounded-lg border border-gray-300 px-3 py-2 text-sm focus:border-gray-900 focus:outline-none"
           />
