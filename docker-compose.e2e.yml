@@ -1,0 +1,32 @@
+# Full stack for the Playwright tests, fed with recorded fixtures instead of live MTA data:
+#   (cd backend && uv run python -m tests.e2e_fixtures ../data/e2e)
+#   docker compose -p transitpulse-e2e -f docker-compose.yml -f docker-compose.e2e.yml --profile app up -d --build --wait
+#
+# Uses its own project name so it never touches the development database.
+x-e2e-env: &e2e-env
+  TP_DATABASE_URL: postgresql://transitpulse:transitpulse@db:5432/transitpulse
+  TP_REDIS_URL: redis://redis:6379/0
+  TP_STATIC_FILE: /data/e2e/gtfs.zip
+  TP_FEED_URLS: '["file:///data/e2e/vehicles.pb"]'
+  TP_ALERTS_URL: file:///data/e2e/alerts.pb
+  TP_POLL_SECONDS: "3"
+
+services:
+  db:
+    ports: !reset []
+  redis:
+    ports: !reset []
+  setup:
+    environment: *e2e-env
+  ingest:
+    environment: *e2e-env
+  api:
+    environment: *e2e-env
+    ports: !reset []
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:8000/api/health')"]
+      interval: 3s
+      retries: 20
+  web:
+    depends_on:
+      api: { condition: service_healthy }

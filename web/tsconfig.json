@@ -12,5 +12,5 @@
     "noEmit": true,
     "types": ["vite/client", "geojson"]
   },
-  "include": ["src", "e2e", "vite.config.ts", "playwright.config.ts"]
+  "include": ["src"]
 }
