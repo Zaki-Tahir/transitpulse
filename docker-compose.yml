@@ -1,0 +1,66 @@
+# Local development: `docker compose up -d db redis`, then run the backend and web dev servers.
+# `docker compose --profile app up --build` runs the whole stack in containers (used by the e2e tests).
+services:
+  db:
+    image: postgis/postgis:17-3.5
+    # The official PostGIS image is x86 only; Apple Silicon runs it under emulation.
+    platform: linux/amd64
+    environment:
+      POSTGRES_USER: transitpulse
+      POSTGRES_PASSWORD: transitpulse
+      POSTGRES_DB: transitpulse
+    ports: ["5432:5432"]
+    volumes: [pgdata:/var/lib/postgresql/data]
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U transitpulse"]
+      interval: 3s
+      retries: 20
+
+  redis:
+    image: redis:7-alpine
+    ports: ["6379:6379"]
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 3s
+      retries: 20
+
+  # Applies migrations and loads the static schedule, then exits.
+  setup:
+    profiles: [app]
+    build: ./backend
+    command: ["sh", "-c", "python -m transitpulse.migrate && python -m transitpulse.load_static $$TP_STATIC_FILE"]
+    environment: &backend-env
+      TP_DATABASE_URL: postgresql://transitpulse:transitpulse@db:5432/transitpulse
+      TP_REDIS_URL: redis://redis:6379/0
+      TP_STATIC_FILE: ""
+    volumes: ["./data:/data:ro"]
+    depends_on:
+      db: { condition: service_healthy }
+
+  ingest:
+    profiles: [app]
+    build: ./backend
+    command: ["python", "-m", "transitpulse.ingest"]
+    environment: *backend-env
+    volumes: ["./data:/data:ro"]
+    depends_on:
+      setup: { condition: service_completed_successfully }
+      redis: { condition: service_healthy }
+
+  api:
+    profiles: [app]
+    build: ./backend
+    environment: *backend-env
+    ports: ["8000:8000"]
+    depends_on:
+      setup: { condition: service_completed_successfully }
+      redis: { condition: service_healthy }
+
+  web:
+    profiles: [app]
+    build: ./web
+    ports: ["8080:8080"]
+    depends_on: [api]
+
+volumes:
+  pgdata:
