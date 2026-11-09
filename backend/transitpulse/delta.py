@@ -16,24 +16,43 @@ from typing import Any
 
 from .realtime import Motion
 
-# Predictions jitter by a few seconds between polls. Rounding to this grid means a train whose
-# prediction moved by 2 seconds isn't re-sent; the animation can't show a 2-second difference anyway.
-TIME_GRID = 10
+# MTA predictions jitter by several seconds on almost every poll. A train is only re-sent when
+# its stops change or its timing moves by more than this. The error is measured against what the
+# browser last received, so it never accumulates past this bound: at subway speeds, 20 seconds is
+# a fraction of a block on the map.
+DEADBAND_SECONDS = 20
 
 Packed = tuple[str, str, str, str, int, int]
 
 
 def pack(m: Motion) -> Packed:
-    def snap(t: int) -> int:
-        return round(t / TIME_GRID) * TIME_GRID
-
-    return (m.id, m.route_id, m.from_stop, m.to_stop, snap(m.depart), snap(m.arrive))
+    return (m.id, m.route_id, m.from_stop, m.to_stop, m.depart, m.arrive)
 
 
-def diff(previous: dict[str, Packed], current: dict[str, Packed]) -> tuple[list[Packed], list[str]]:
-    updated = [v for vid, v in current.items() if previous.get(vid) != v]
-    removed = [vid for vid in previous if vid not in current]
-    return updated, removed
+def diff(
+    sent: dict[str, Packed], current: dict[str, Packed]
+) -> tuple[list[Packed], list[str], dict[str, Packed]]:
+    """Compares this poll with what clients already have.
+
+    Returns the vehicles to send, the ids to remove, and the new "what clients have" state, which
+    keeps the previously sent version of any train whose change was within the deadband.
+    """
+    updated: list[Packed] = []
+    state: dict[str, Packed] = {}
+    for vid, v in current.items():
+        old = sent.get(vid)
+        if (
+            old is not None
+            and old[1:4] == v[1:4]
+            and abs(old[4] - v[4]) <= DEADBAND_SECONDS
+            and abs(old[5] - v[5]) <= DEADBAND_SECONDS
+        ):
+            state[vid] = old
+        else:
+            state[vid] = v
+            updated.append(v)
+    removed = [vid for vid in sent if vid not in current]
+    return updated, removed, state
 
 
 def snapshot_message(t: int, vehicles: dict[str, Packed]) -> str:

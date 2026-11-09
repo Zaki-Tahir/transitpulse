@@ -62,18 +62,20 @@ def test_delta_sends_only_what_changed():
     after = {
         m.id: pack(m)
         for m in [
-            motion("1", 102, 223),  # prediction jittered by a few seconds: not re-sent
+            motion("1", 108, 235),  # prediction jittered by under 20s: not re-sent
             motion("2", 160, 280),  # delayed by a minute: re-sent
             motion("4", 100, 220),  # new train
         ]
     }
-    updated, removed = diff(before, after)
+    updated, removed, state = diff(before, after)
     assert [u[0] for u in updated] == ["2", "4"]
     assert removed == ["3"]
+    # Clients keep the version of train 1 they already have.
+    assert state["1"] == before["1"]
 
     msg = json.loads(delta_message(NOW, updated, removed))
     assert msg == {"type": "delta", "t": NOW, "u": [list(u) for u in updated], "r": ["3"]}
-    assert json.loads(snapshot_message(NOW, after))["v"][0] == ["1", "A", "101N", "102N", 100, 220]
+    assert json.loads(snapshot_message(NOW, state))["v"][0] == ["1", "A", "101N", "102N", 100, 220]
 
 
 def test_compact_delta_is_much_smaller_than_resending_everything():
