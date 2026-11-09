@@ -37,7 +37,7 @@ jobs:
       TP_REDIS_URL: redis://localhost:6379/15
     steps:
       - uses: actions/checkout@v7
-      - uses: astral-sh/setup-uv@v10
+      - uses: astral-sh/setup-uv@v10.3.3
         with:
           enable-cache: true
       - run: uv sync --frozen
@@ -84,7 +84,7 @@ jobs:
     needs: [backend, web]
     steps:
       - uses: actions/checkout@v7
-      - uses: astral-sh/setup-uv@v10
+      - uses: astral-sh/setup-uv@v10.3.3
       - uses: actions/setup-node@v7
         with:
           node-version: 22
