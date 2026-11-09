@@ -27,7 +27,11 @@ def main(out: Path) -> None:
                 {"id": "b1", "route": "B", "upcoming": [("102N", now + 150)]},
                 # Later departures so stations keep showing arrivals for a while.
                 *[
-                    {"id": f"a-later-{i}", "route": "A", "upcoming": [("102N", now + 600 * i), ("103N", now + 600 * i + 180)]}
+                    {
+                        "id": f"a-later-{i}",
+                        "route": "A",
+                        "upcoming": [("102N", now + 600 * i), ("103N", now + 600 * i + 180)],
+                    }
                     for i in range(1, 5)
                 ],
             ],
@@ -35,7 +39,16 @@ def main(out: Path) -> None:
         )
     )
     (out / "alerts.pb").write_bytes(
-        alerts_feed([{"id": "lmm:alert:e2e", "routes": ["A"], "text": "[A] trains are running with delays", "periods": []}])
+        alerts_feed(
+            [
+                {
+                    "id": "lmm:alert:e2e",
+                    "routes": ["A"],
+                    "text": "[A] trains are running with delays",
+                    "periods": [],
+                }
+            ]
+        )
     )
     print(f"wrote e2e fixtures to {out}")
 
