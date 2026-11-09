@@ -1,0 +1,28 @@
+# Exactly one ingest worker. Recreate (not RollingUpdate) so two never publish at once during a
+# deploy; the new one resumes from the snapshot in Redis, so browsers don't get a burst of updates.
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: {{ include "tp.name" . }}-ingest
+  labels: {{- include "tp.labels" . | nindent 4 }}
+    app.kubernetes.io/component: ingest
+spec:
+  replicas: 1
+  strategy: { type: Recreate }
+  selector:
+    matchLabels: {{- include "tp.selector" (dict "root" . "component" "ingest") | nindent 6 }}
+  template:
+    metadata:
+      labels: {{- include "tp.labels" . | nindent 8 }}
+        app.kubernetes.io/component: ingest
+    spec:
+      securityContext: {{- include "tp.podSecurity" . | nindent 8 }}
+      initContainers: {{- include "tp.migrateInit" . | nindent 8 }}
+      containers:
+        - name: ingest
+          image: {{ include "tp.apiImage" . }}
+          imagePullPolicy: {{ .Values.images.pullPolicy }}
+          command: ["python", "-m", "transitpulse.ingest"]
+          env: {{- include "tp.backendEnv" . | nindent 12 }}
+          resources: {{- toYaml .Values.ingest.resources | nindent 12 }}
+          securityContext: {{- include "tp.containerSecurity" . | nindent 12 }}

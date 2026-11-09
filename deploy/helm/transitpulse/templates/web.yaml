@@ -1,0 +1,42 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: {{ include "tp.name" . }}-web
+  labels: {{- include "tp.labels" . | nindent 4 }}
+    app.kubernetes.io/component: web
+spec:
+  replicas: {{ .Values.web.replicas }}
+  selector:
+    matchLabels: {{- include "tp.selector" (dict "root" . "component" "web") | nindent 6 }}
+  template:
+    metadata:
+      labels: {{- include "tp.labels" . | nindent 8 }}
+        app.kubernetes.io/component: web
+    spec:
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 101
+        seccompProfile: { type: RuntimeDefault }
+      containers:
+        - name: web
+          image: {{ include "tp.webImage" . }}
+          imagePullPolicy: {{ .Values.images.pullPolicy }}
+          ports: [{ name: http, containerPort: 8080 }]
+          env:
+            - name: API_UPSTREAM
+              value: http://{{ include "tp.name" . }}-api:8000
+          readinessProbe:
+            httpGet: { path: /healthz, port: http }
+          resources: {{- toYaml .Values.web.resources | nindent 12 }}
+          securityContext:
+            allowPrivilegeEscalation: false
+            capabilities: { drop: [ALL] }
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: {{ include "tp.name" . }}-web
+  labels: {{- include "tp.labels" . | nindent 4 }}
+spec:
+  selector: {{- include "tp.selector" (dict "root" . "component" "web") | nindent 4 }}
+  ports: [{ name: http, port: 80, targetPort: http }]

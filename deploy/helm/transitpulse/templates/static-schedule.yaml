@@ -1,0 +1,45 @@
+{{- define "tp.loadStaticPod" -}}
+securityContext: {{- include "tp.podSecurity" . | nindent 2 }}
+restartPolicy: OnFailure
+initContainers: {{- include "tp.migrateInit" . | nindent 2 }}
+containers:
+  - name: load-static
+    image: {{ include "tp.apiImage" . }}
+    imagePullPolicy: {{ .Values.images.pullPolicy }}
+    command: ["python", "-m", "transitpulse.load_static"]
+    env: {{- include "tp.backendEnv" . | nindent 6 }}
+    resources:
+      requests: { cpu: 200m, memory: 256Mi }
+      limits: { memory: 768Mi }
+    securityContext:
+      allowPrivilegeEscalation: false
+      capabilities: { drop: [ALL] }
+{{- end }}
+# Loads the schedule right after install/upgrade...
+apiVersion: batch/v1
+kind: Job
+metadata:
+  name: {{ include "tp.name" . }}-load-static
+  labels: {{- include "tp.labels" . | nindent 4 }}
+  annotations:
+    helm.sh/hook: post-install,post-upgrade
+    helm.sh/hook-delete-policy: before-hook-creation,hook-succeeded
+spec:
+  backoffLimit: 6
+  template:
+    spec: {{- include "tp.loadStaticPod" . | nindent 6 }}
+---
+# ...and again every week.
+apiVersion: batch/v1
+kind: CronJob
+metadata:
+  name: {{ include "tp.name" . }}-load-static
+  labels: {{- include "tp.labels" . | nindent 4 }}
+spec:
+  schedule: {{ .Values.staticSchedule.cron | quote }}
+  concurrencyPolicy: Forbid
+  jobTemplate:
+    spec:
+      backoffLimit: 3
+      template:
+        spec: {{- include "tp.loadStaticPod" . | nindent 10 }}

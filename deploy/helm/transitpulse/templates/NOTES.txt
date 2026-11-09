@@ -1,0 +1,15 @@
+TransitPulse is starting.
+
+  - The schedule loader Job runs once after this install, then weekly ({{ .Values.staticSchedule.cron }}).
+  - The ingest worker begins publishing trains within ~15 seconds of the schedule loading.
+
+{{- if .Values.ingress.enabled }}
+Open: http{{ if .Values.ingress.tls.enabled }}s{{ end }}://{{ .Values.ingress.host }}/
+{{- else }}
+Try it locally:
+  kubectl port-forward -n {{ .Release.Namespace }} svc/{{ include "tp.name" . }}-web 8080:80
+  open http://localhost:8080/
+{{- end }}
+
+Check the worker:
+  kubectl logs -n {{ .Release.Namespace }} deploy/{{ include "tp.name" . }}-ingest -f

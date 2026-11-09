@@ -1,0 +1,65 @@
+images:
+  api:
+    repository: ghcr.io/zaki-tahir/transitpulse-api
+    # Defaults to the chart's appVersion. CI sets this to the commit SHA.
+    tag: ""
+  web:
+    repository: ghcr.io/zaki-tahir/transitpulse-web
+    tag: ""
+  pullPolicy: IfNotPresent
+
+# Connection strings. Leave empty to use the in-cluster Postgres/Redis below, or point
+# existingSecret at a Secret with DATABASE_URL and REDIS_URL keys for managed services.
+database:
+  existingSecret: ""
+
+config:
+  pollSeconds: 15
+  # Extra feeds that need a key (e.g. MTA Bus Time). Read from this Secret's MTA_API_KEY.
+  mtaApiKeySecret: ""
+  # Override the default MTA subway feeds, e.g. to replay recorded data.
+  feedUrls: []
+
+api:
+  replicas: 2
+  resources:
+    requests: { cpu: 100m, memory: 192Mi }
+    limits: { memory: 384Mi }
+  autoscaling:
+    enabled: true
+    minReplicas: 2
+    maxReplicas: 6
+    targetCPUUtilizationPercentage: 70
+
+ingest:
+  resources:
+    requests: { cpu: 100m, memory: 256Mi }
+    limits: { memory: 512Mi }
+
+web:
+  replicas: 2
+  resources:
+    requests: { cpu: 20m, memory: 32Mi }
+    limits: { memory: 64Mi }
+
+staticSchedule:
+  # MTA publishes schedule changes ahead of time; reload weekly (Monday 06:00 UTC).
+  cron: "0 6 * * 1"
+
+ingress:
+  enabled: true
+  className: nginx
+  host: transitpulse.local
+  tls:
+    enabled: false
+    secretName: transitpulse-tls
+
+# In-cluster databases for development and demo clusters. Use managed services in production.
+postgres:
+  enabled: true
+  image: postgis/postgis:17-3.5
+  password: transitpulse
+  storage: 5Gi
+redis:
+  enabled: true
+  image: redis:7-alpine
