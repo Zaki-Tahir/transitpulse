@@ -1,0 +1,90 @@
+name: Deploy
+
+# After CI (including the Playwright tests) passes on main: build images, push them to GHCR,
+# and roll them out to Kubernetes with Helm. A failed rollout is rolled back automatically.
+on:
+  workflow_run:
+    workflows: [CI]
+    types: [completed]
+    branches: [main]
+  workflow_dispatch:
+
+concurrency:
+  group: deploy
+  cancel-in-progress: false
+
+permissions:
+  contents: read
+  packages: write
+
+env:
+  REGISTRY: ghcr.io
+  IMAGE_TAG: ${{ github.event.workflow_run.head_sha || github.sha }}
+
+jobs:
+  images:
+    # Opt-in: set the repository variable DEPLOY_ENABLED=true once a cluster is configured.
+    if: >-
+      vars.DEPLOY_ENABLED == 'true' &&
+      (github.event_name == 'workflow_dispatch' || github.event.workflow_run.conclusion == 'success')
+    runs-on: ubuntu-latest
+    outputs:
+      owner: ${{ steps.owner.outputs.lower }}
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          ref: ${{ env.IMAGE_TAG }}
+      - id: owner
+        run: echo "lower=${GITHUB_REPOSITORY_OWNER,,}" >> "$GITHUB_OUTPUT"
+      - uses: docker/login-action@v4
+        with:
+          registry: ${{ env.REGISTRY }}
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+      - uses: docker/setup-buildx-action@v4
+      - uses: docker/build-push-action@v7
+        with:
+          context: backend
+          push: true
+          tags: ${{ env.REGISTRY }}/${{ steps.owner.outputs.lower }}/transitpulse-api:${{ env.IMAGE_TAG }}
+          cache-from: type=gha,scope=api
+          cache-to: type=gha,mode=max,scope=api
+      - uses: docker/build-push-action@v7
+        with:
+          context: web
+          push: true
+          tags: ${{ env.REGISTRY }}/${{ steps.owner.outputs.lower }}/transitpulse-web:${{ env.IMAGE_TAG }}
+          cache-from: type=gha,scope=web
+          cache-to: type=gha,mode=max,scope=web
+
+  deploy:
+    needs: images
+    runs-on: ubuntu-latest
+    environment: production
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          ref: ${{ env.IMAGE_TAG }}
+      - uses: azure/setup-helm@v5
+      - name: Configure cluster access
+        run: |
+          mkdir -p ~/.kube
+          echo "${{ secrets.KUBE_CONFIG }}" | base64 -d > ~/.kube/config
+          chmod 600 ~/.kube/config
+      - name: Helm upgrade
+        env:
+          OWNER: ${{ needs.images.outputs.owner }}
+        run: |
+          helm upgrade --install transitpulse deploy/helm/transitpulse \
+            --namespace "${{ vars.K8S_NAMESPACE }}" --create-namespace \
+            --set images.api.repository="$REGISTRY/$OWNER/transitpulse-api" \
+            --set images.web.repository="$REGISTRY/$OWNER/transitpulse-web" \
+            --set images.api.tag="$IMAGE_TAG" \
+            --set images.web.tag="$IMAGE_TAG" \
+            --set ingress.host="${{ vars.APP_HOST }}" \
+            --set ingress.tls.enabled=true \
+            --set database.existingSecret="${{ vars.DB_SECRET_NAME }}" \
+            --set postgres.enabled=false --set redis.enabled=false \
+            --atomic --wait --timeout 10m
+      - name: Smoke test
+        run: curl --fail --silent --show-error --retry 10 --retry-delay 6 "https://${{ vars.APP_HOST }}/api/health"
